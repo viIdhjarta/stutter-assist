@@ -6,6 +6,10 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 import logging
+import unicodedata
+import string
+import jaconv  # jaconvライブラリを使用してひらがな⇔カタカナ変換
+
 
 # ロガーのセットアップ
 logging.basicConfig(level=logging.INFO)
@@ -13,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # グローバル変数としてモデルとトークナイザ、形態素解析器を初期化
 bert_model_name = "cl-tohoku/bert-base-japanese-v2"
+
 
 # MeCab形態素解析器の初期化
 try:
@@ -84,63 +89,187 @@ bert_model, bert_tokenizer = load_model()
 
 def analyze_morphology(text):
     """
-    テキストを形態素解析し、単語と品詞情報を返す（MeCabを使用）
+    テキストを形態素解析し、単語と品詞情報、読み情報を返す（MeCabを使用）
     """
     if mecab_tagger is None:
         logger.warning("MeCab形態素解析器が無効なため、形態素解析をスキップします")
         return []
 
+    # デバッグ用: 生のMeCab出力を確認
+    raw_mecab_output = mecab_tagger.parse(text)
+    logger.info(f"MeCab生出力: {raw_mecab_output}")
+
     words = []
     node = mecab_tagger.parseToNode(text)
     position = 0
+    char_position = 0  # テキスト内の文字位置を追跡
 
     while node:
         if node.surface:  # 表層形が存在する場合のみ処理
             # 単語と品詞情報を取得
             surface = node.surface
             feature = node.feature.split(",")
+
             pos = feature[0] if len(feature) > 0 else "UNK"
 
-            words.append({"surface": surface, "pos": pos, "position": position})
-            position += 1
+            # 読み情報を取得（利用可能な場合）
+            reading = ""
+            if len(feature) >= 8:
+                reading = feature[6]
+
+            # テキスト内の正確な位置情報を追加
+            start_pos = text.find(surface, char_position)
+            if start_pos != -1:
+                end_pos = start_pos + len(surface)
+                char_position = end_pos  # 次の検索開始位置を更新
+
+                words.append(
+                    {
+                        "surface": surface,
+                        "pos": pos,
+                        "position": position,
+                        "start": start_pos,
+                        "end": end_pos,
+                        "reading": reading,  # 読み情報を追加
+                        "feature": feature,  # デバッグ用に素性情報全体も追加
+                    }
+                )
+                position += 1
 
         node = node.next
 
     return words
 
 
-def get_difficult_words(text, difficulty_threshold=0.5, user_difficult_words=None):
+def get_pronunciation(text, keep_unknown=False):
+    """
+    テキストの発音をカタカナで取得する関数
+    例：「今日はよく寝ました」→「キョウワヨクネマシタ」
+
+    Parameters:
+    - text: 変換するテキスト
+    - keep_unknown: 読みが不明な文字をそのまま残すかどうか
+    """
+    # MeCabを使用して形態素解析
+    words_info = analyze_morphology(text)
+
+    # 発音の結果を構築
+    pronunciation = ""
+
+    for word_info in words_info:
+        surface = word_info["surface"]
+        reading = word_info.get("reading", "")
+
+    # 区切り文字や記号を削除（keep_unknownがTrueの場合は保持）
+    if not keep_unknown:
+        table = str.maketrans("", "", string.punctuation + "「」、。・")
+        pronunciation = pronunciation.translate(table)
+
+    # 最終結果のログ出力
+    logger.info(f"テキスト '{text}' の発音結果: {pronunciation}")
+
+    return pronunciation
+
+
+def is_kana(char):
+    """
+    文字がひらがなまたはカタカナかどうかを判定する関数
+    """
+    return (
+        "\u3040" <= char <= "\u309f"  # ひらがな
+        or "\u30a0" <= char <= "\u30ff"  # カタカナ
+    )
+
+
+def format_text(text):
+    """
+    記号を削除する関数
+    """
+    text = unicodedata.normalize("NFKC", text)  # 全角記号をざっくり半角へ置換
+    table = str.maketrans("", "", string.punctuation + "「」、。・")
+    text = text.translate(table)
+    return text
+
+
+def check_difficult_sounds(word, difficult_sounds, reading=None):
+    """
+    単語が苦手な音で始まるか、苦手な音を含むかを確認
+
+    Parameters:
+    - word: 確認する単語
+    - difficult_sounds: 苦手な音のリスト (例: ['し', 'は', 'き'])
+    - reading: 単語の読み（形態素解析から取得）
+
+    Returns:
+    - (boolean, float): 苦手かどうかのフラグと、難易度スコア
+    """
+    if not word or not difficult_sounds:
+        return False, 0.0
+
+    # 読みが存在する場合
+    if reading:
+        # 単語の先頭が苦手な音から始まるか（カタカナに変換してから比較
+        for sound in difficult_sounds:
+            katakana_sound = jaconv.hira2kata(sound)  # ひらがなをカタカナに変換
+            if reading.startswith(katakana_sound):
+                logger.info(
+                    f"苦手な音 '{sound}'(カタカナ: {katakana_sound}) が読み '{reading}' の先頭にマッチしました"
+                )
+                return True, 0.9
+
+    return False, 0.0
+
+
+def get_difficult_words(text, difficulty_threshold=0.5, difficult_sounds=None):
     """
     テキスト内の難しい単語を特定する
     difficulty_threshold: 難しさの閾値
-    user_difficult_words: ユーザーが定義した難しい単語のリスト
+    difficult_sounds: ユーザーが苦手とする音のリスト (例: ['し', 'は', 'き'])
     """
-    # 簡単な実装: 名詞、動詞、形容詞で4文字以上の単語を「難しい」と判定
-    # 実際のアプリでは、より複雑なロジックやモデルを使用する
     words = analyze_morphology(text)
     difficult_words = []
 
+    # ハイライトから除外する品詞リスト
+    exclude_pos = ["助詞", "助動詞", "接尾辞"]
+
     for word_info in words:
         word = word_info["surface"]
-        pos = word_info["pos"]
+        pos = word_info["pos"]  # 　品詞
         position = word_info["position"]
+        start = word_info.get("start", 0)
+        end = word_info.get("end", 0)
+        reading = word_info.get("reading", "")  # 読み情報を取得
 
-        # ユーザー定義の難しい単語リストに含まれるか確認
-        if user_difficult_words and word in user_difficult_words:
-            difficult_words.append(
-                {"word": word, "position": position, "difficulty": 1.0}
-            )
+        # 助詞、助動詞、接尾辞はスキップ
+        if any(excluded in pos for excluded in exclude_pos):
             continue
 
-        # 品詞と長さによる簡易判定
-        if pos in ["名詞", "動詞", "形容詞"] and len(word) >= 4:
-            # 実際のアプリでは、単語の頻度や発音の複雑さなどに基づいて難しさを計算
-            difficulty = 0.7 if len(word) >= 5 else 0.6
+        difficulty = 0.0
+        reason = ""
 
-            if difficulty >= difficulty_threshold:
-                difficult_words.append(
-                    {"word": word, "position": position, "difficulty": difficulty}
-                )
+        # 苦手な音を含むか確認
+        if difficult_sounds:
+            is_difficult, sound_difficulty = check_difficult_sounds(
+                word, difficult_sounds, reading
+            )
+            if is_difficult:
+                difficulty = max(difficulty, sound_difficulty)
+                reason = "difficult_sound"
+
+        # 閾値以上の難易度を持つ単語を追加
+        if difficulty >= difficulty_threshold:
+            difficult_words.append(
+                {
+                    "word": word,
+                    "position": position,
+                    "difficulty": difficulty,
+                    "reason": reason,
+                    "start": start,
+                    "end": end,
+                    "reading": reading,  # 読み情報も結果に含める
+                    "pos": pos,  # 品詞情報も追加
+                }
+            )
 
     return difficult_words
 
@@ -297,6 +426,3 @@ def filter_by_pronunciation_ease(alternatives, difficult_patterns=None):
     filtered_alts.sort(key=lambda x: x["score"], reverse=True)
 
     return filtered_alts
-
-
-

@@ -25,6 +25,7 @@ class TextAnalysisRequest(BaseModel):
     text: str
     difficulty_threshold: Optional[float] = 0.5
     user_difficult_words: Optional[List[str]] = None
+    difficult_sounds: Optional[List[str]] = None
 
 
 class AlternativesRequest(BaseModel):
@@ -78,7 +79,10 @@ async def analyze_text(request: TextAnalysisRequest):
     """
     try:
         difficult_words = nlp_utils.get_difficult_words(
-            request.text, request.difficulty_threshold, request.user_difficult_words
+            request.text,
+            request.difficulty_threshold,
+            request.user_difficult_words,
+            request.difficult_sounds,
         )
 
         return {"text": request.text, "difficult_words": difficult_words}
@@ -122,11 +126,14 @@ async def get_smart_alternatives(request: AlternativesRequest):
 async def analyze_realtime(request: TextAnalysisRequest):
     """
     リアルタイムにテキストを分析して難しい単語と代替案を一度に返す
+    形態素解析の結果を利用して正確な単語の位置情報を返す
     """
     try:
-        # 難しい単語を検出
+        # 形態素解析と難しい単語を検出（苦手な音を含む）
         difficult_words = nlp_utils.get_difficult_words(
-            request.text, request.difficulty_threshold, request.user_difficult_words
+            request.text,
+            request.difficulty_threshold,
+            request.difficult_sounds,
         )
 
         # 各難しい単語に対して代替案を生成
@@ -148,17 +155,28 @@ async def analyze_realtime(request: TextAnalysisRequest):
                 combined_alternatives
             )
 
-            # 結果を追加
+            # 結果を追加（文字位置情報を含む）
             words_with_alternatives.append(
                 {
                     "word": word,
                     "position": word_info["position"],
                     "difficulty": word_info["difficulty"],
+                    "reason": word_info.get("reason", ""),
+                    "start": word_info.get("start", 0),
+                    "end": word_info.get("end", 0),
+                    "reading": word_info.get("reading", ""),  # 読み情報も追加
                     "alternatives": filtered_alternatives[:5],  # 上位5件に制限
                 }
             )
 
-        return {"text": request.text, "words": words_with_alternatives}
+        # テキスト全体の読みを取得（2つのバージョンを返す）
+        text_pronunciation = nlp_utils.get_pronunciation(request.text)
+
+        return {
+            "text": request.text, #元のテキスト
+            "pronunciation": text_pronunciation,  #読み
+            "words": words_with_alternatives, #難しい単語とその代替案のオブ
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500,

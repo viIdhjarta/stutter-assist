@@ -10,3 +10,5 @@ ipadic==1.0.0
 torch==2.2.1
 numpy==1.26.3
 scikit-learn==1.6.1
+jaconv==0.4.0
+pykakasi==2.3.0

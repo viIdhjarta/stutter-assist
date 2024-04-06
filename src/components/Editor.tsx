@@ -22,6 +22,7 @@ interface EditorProps {
   threshold?: number; // 難易度の閾値
   userEasyWords?: string[]; // ユーザーが簡単と設定した単語
   userDifficultWords?: string[]; // ユーザーが難しいと設定した単語
+  difficultSounds?: string[]; // ユーザーが苦手な音のリスト
 }
 
 // デバウンス時間（ミリ秒）
@@ -37,10 +38,6 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
 
   const handleClick = (): void => {
     if (spanRef.current) {
-      const rect = spanRef.current.getBoundingClientRect();
-      // 単語の中央位置を計算
-      const wordCenter = rect.left + (rect.width / 2);
-
       setPopoverPosition({
         top: window.scrollY + 20,
         left: window.scrollX - 45
@@ -92,6 +89,7 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
       ref={spanRef}
       className="highlight"
       onClick={handleClick}
+      style={{ backgroundColor: '#FFEB3B', cursor: 'pointer', padding: '0 1px' }}
     >
       {props.children}
       {showPopover && (
@@ -110,6 +108,14 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
   );
 };
 
+// 難しい単語の情報を保持する型
+interface DifficultWordInfo {
+  word: string;
+  start: number;
+  end: number;
+  blockKey?: string;
+}
+
 // 難しい単語を検出するストラテジー
 type DecoratorStrategy = (
   contentBlock: ContentBlock,
@@ -117,18 +123,35 @@ type DecoratorStrategy = (
   contentState: ContentState
 ) => void;
 
-const createDifficultWordStrategy = (hardWords: string[]): DecoratorStrategy => {
+// 形態素解析された単語位置に基づいてハイライトするストラテジー
+const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[]): DecoratorStrategy => {
   return (contentBlock, callback, contentState) => {
+    const blockKey = contentBlock.getKey();
     const text = contentBlock.getText();
+    const blockStart = 0; // ブロック内の開始位置
 
-    hardWords.forEach(word => {
-      // 大文字小文字を区別せずに検索するための正規表現を作成
-      const regex = new RegExp(word, 'gi');
-      let match;
+    // 現在のブロックに属するdifficultWords内の単語を取得
+    difficultWords.forEach(wordInfo => {
+      const wordText = wordInfo.word;
+      const positions: number[] = [];
 
-      // 正規表現で一致する全ての箇所を見つける
-      while ((match = regex.exec(text)) !== null) {
-        callback(match.index, match.index + word.length);
+      // 形態素解析で見つかったテキスト全体での位置情報がある場合
+      if (wordInfo.start !== undefined && wordInfo.end !== undefined) {
+        // ブロック内のテキストの先頭からマッチングを開始
+        let startIndex = 0;
+        while (startIndex < text.length) {
+          const matchIndex = text.indexOf(wordText, startIndex);
+          if (matchIndex === -1) break;
+
+          positions.push(matchIndex);
+          startIndex = matchIndex + wordText.length;
+        }
+      }
+
+      // 見つかった各位置に対してコールバックを呼び出す
+      for (let pos of positions) {
+        // 単語の開始・終了位置を指定
+        callback(pos, pos + wordText.length);
       }
     });
   };
@@ -140,12 +163,18 @@ const Editor: React.FC<EditorProps> = ({
   onAddDifficultWord,
   threshold = 0.5,
   userEasyWords = [],
-  userDifficultWords = []
+  userDifficultWords = [],
+  difficultSounds = []
 }) => {
   // 難しい単語のリスト（APIから取得）
-  const [hardWords, setHardWords] = useState<string[]>(initialHardWords);
+  const [hardWords, setHardWords] = useState<DifficultWordInfo[]>([]);
   const [currentText, setCurrentText] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [morphemes, setMorphemes] = useState<any[]>([]);
+  // テキストの読み情報を保持する状態を追加
+  const [textPronunciation, setTextPronunciation] = useState<string>('');
+  const [textPronunciationWithUnknowns, setTextPronunciationWithUnknowns] = useState<string>('');
+  const [showDetailedReading, setShowDetailedReading] = useState<boolean>(false);
 
   // 単語を置き換える関数
   const replaceWord = useCallback((oldWord: string, newWord: string, blockKey: string, start: number, end: number): void => {
@@ -226,19 +255,67 @@ const Editor: React.FC<EditorProps> = ({
 
     try {
       setIsAnalyzing(true);
-      const response = await analyzeRealtime(text, threshold, userDifficultWords);
+
+      // Propsから渡された苦手な音のリストを使用
+      console.log('苦手な音リスト:', difficultSounds);
+      const response = await analyzeRealtime(text, threshold, userDifficultWords, difficultSounds);
+
+      // APIレスポンスの詳細をデバッグ表示
+      console.log('APIレスポンス全体:', response);
+
+      // テキストの読みを保存
+      if (response && response.pronunciation) {
+        setTextPronunciation(response.pronunciation);
+        console.log('テキスト全体の読み (標準):', response.pronunciation);
+      }
+
+      // 不明文字を含む読みも保存
+      if (response && response.pronunciation_with_unknowns) {
+        setTextPronunciationWithUnknowns(response.pronunciation_with_unknowns);
+        console.log('テキスト全体の読み (不明文字を含む):', response.pronunciation_with_unknowns);
+      }
+
+      // 形態素解析結果の保存
+      if (response && response.morphemes && Array.isArray(response.morphemes)) {
+        setMorphemes(response.morphemes);
+
+        // 「吃音」を含む形態素を特に確認
+        const kitsuonMorphemes = response.morphemes.filter((m: any) => m.surface.includes('吃音'));
+        console.log('「吃音」を含む形態素:', kitsuonMorphemes);
+
+        // 「き」で始まる読みを持つ形態素を確認
+        const kiMorphemes = response.morphemes.filter((m: any) =>
+          m.reading && (m.reading.startsWith('キ') || m.reading.startsWith('き'))
+        );
+        console.log('「き」で始まる読みを持つ形態素:', kiMorphemes);
+      }
 
       // 難しい単語を取得してハードワードリストを更新
       if (response && response.words && Array.isArray(response.words)) {
-        const difficultWords = response.words.map((item: any) => item.word);
+        // 位置情報付きの難しい単語のリストを作成
+        const difficultWords = response.words.map((item: any) => ({
+          word: item.word,
+          start: item.start,
+          end: item.end,
+          reason: item.reason,
+          reading: item.reading
+        }));
+
         setHardWords(difficultWords);
+
+        // 「吃音」を含む難しい単語のデバッグ出力
+        const kitsuonWords = response.words.filter((item: any) => item.word.includes('吃音'));
+        if (kitsuonWords.length > 0) {
+          console.log('「吃音」を含む難しい単語:', kitsuonWords);
+          console.log('「吃音」の読み:', kitsuonWords.map((w: any) => w.reading));
+        }
       }
     } catch (error) {
       console.error('テキスト分析エラー:', error);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [threshold, userDifficultWords, isAnalyzing]);
+  }, [threshold, userDifficultWords, isAnalyzing, difficultSounds]);
 
   // デバウンス処理を行ったテキスト分析関数
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,12 +352,61 @@ const Editor: React.FC<EditorProps> = ({
   }, [hardWords, createDecorator]);
 
   return (
-    <div className="editor-container">
-      <div className="editor">
+    <div className="editor-container" style={{ position: 'relative' }}>
+      <div className="editor-header" style={{ marginBottom: '10px' }}>
+        <h4>エディタ</h4>
+        {isAnalyzing && <span style={{ color: '#888', fontSize: '14px', marginLeft: '10px' }}>分析中...</span>}
+      </div>
+
+      {/* テキストの読み（発音）を表示するUI */}
+      {textPronunciation && (
+        <div className="text-pronunciation" style={{
+          marginBottom: '15px',
+          padding: '10px',
+          backgroundColor: '#f5f5f5',
+          borderRadius: '5px',
+          fontSize: '14px',
+          lineHeight: '1.5'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+            <div style={{ fontWeight: 'bold' }}>テキストの読み：</div>
+            <button
+              onClick={() => setShowDetailedReading(!showDetailedReading)}
+              style={{
+                border: 'none',
+                background: '#e0e0e0',
+                borderRadius: '3px',
+                padding: '3px 8px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              {showDetailedReading ? '標準表示' : '詳細表示'}
+            </button>
+          </div>
+
+          {/* 元のテキストと読みを比較して表示 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ padding: '5px', backgroundColor: '#fff', borderRadius: '3px' }}>
+              <span style={{ color: '#666', fontSize: '12px' }}>元のテキスト：</span>
+              <br />
+              {currentText}
+            </div>
+
+            <div style={{ padding: '5px', backgroundColor: '#e6f7ff', borderRadius: '3px' }}>
+              <span style={{ color: '#666', fontSize: '12px' }}>読み（カタカナ）：</span>
+              <br />
+              {showDetailedReading ? textPronunciationWithUnknowns : textPronunciation}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="editor-wrapper" style={{ border: '1px solid #ccc', padding: '10px', minHeight: '150px' }}>
         <DraftEditor
           editorState={editorState}
           onChange={handleEditorChange}
-          placeholder="入力を始めましょう..."
+          placeholder="文章を入力してください..."
         />
       </div>
     </div>

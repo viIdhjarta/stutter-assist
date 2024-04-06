@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container, Row, Col, Button } from 'react-bootstrap';
+import { Container, Row, Col, Button, Form } from 'react-bootstrap';
 import './App.css';
 import NavBar from './components/NavBar';
 import Editor from './components/Editor';
@@ -19,9 +19,11 @@ function App() {
   // 設定値の管理
   const [difficultyThreshold, setDifficultyThreshold] = useState<number>(0.5);
   const [easyWords, setEasyWords] = useState<string[]>([]);
-  const [difficultWords, setDifficultWords] = useState<string[]>([
-    '吃音症', '言語障害', 'スティグマ', 'PWS'
-  ]);
+  const [difficultWords, setDifficultWords] = useState<string[]>([]);
+
+  // 苦手な音の設定
+  const [difficultSounds, setDifficultSounds] = useState<string[]>(['し', 'は', 'き']);
+  const [newSound, setNewSound] = useState<string>('');
 
   // APIの接続状態を確認する
   useEffect(() => {
@@ -64,6 +66,19 @@ function App() {
     }
   };
 
+  // 苦手な音を追加
+  const handleAddDifficultSound = () => {
+    if (newSound && newSound.trim() && !difficultSounds.includes(newSound)) {
+      setDifficultSounds([...difficultSounds, newSound]);
+      setNewSound('');
+    }
+  };
+
+  // 苦手な音を削除
+  const handleRemoveDifficultSound = (sound: string) => {
+    setDifficultSounds(difficultSounds.filter(s => s !== sound));
+  };
+
   return (
     <div className="App">
       <NavBar
@@ -73,7 +88,7 @@ function App() {
       />
       <Container fluid>
         <Row className="my-4">
-          <Col>
+          <Col md={8}>
             <Editor
               hardWords={difficultWords}
               onAddEasyWord={handleAddEasyWord}
@@ -81,7 +96,48 @@ function App() {
               threshold={difficultyThreshold}
               userEasyWords={easyWords}
               userDifficultWords={difficultWords}
+              difficultSounds={difficultSounds}
             />
+          </Col>
+          <Col md={4}>
+            <div className="settings-panel p-3 border rounded">
+              <h4>苦手な音の設定</h4>
+              <p className="text-muted">苦手な音を設定すると、その音を含む単語が自動的にハイライトされます</p>
+
+              <div className="mb-3">
+                <Form.Group className="d-flex mb-2">
+                  <Form.Control
+                    type="text"
+                    placeholder="苦手な音（例: し）"
+                    value={newSound}
+                    onChange={(e) => setNewSound(e.target.value)}
+                    maxLength={2}
+                  />
+                  <Button
+                    variant="primary"
+                    className="ms-2"
+                    onClick={handleAddDifficultSound}
+                    disabled={!newSound.trim()}
+                  >
+                    追加
+                  </Button>
+                </Form.Group>
+
+                <div className="difficult-sounds">
+                  {difficultSounds.map((sound, index) => (
+                    <Button
+                      key={index}
+                      variant="outline-warning"
+                      size="sm"
+                      className="me-2 mb-2"
+                      onClick={() => handleRemoveDifficultSound(sound)}
+                    >
+                      {sound} ×
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </Col>
         </Row>
       </Container>
