@@ -1,34 +1,43 @@
 import React, { useState } from 'react';
 import { Modal, Button, Card, Nav } from 'react-bootstrap';
 
+const STORAGE_KEYS = {
+  DIFFICULT: 'difficult_pronunciations',
+  EASY: 'easy_pronunciations'
+} as const;
+
 interface PreferencesModalProps {
   show: boolean;
   onHide: () => void;
   onSave: (easyPronunciations: string[], difficultPronunciations: string[]) => void;
-  initialEasyPronunciations: string[];
-  initialDifficultPronunciations: string[];
 }
 
 const PreferencesModal: React.FC<PreferencesModalProps> = ({
   show,
   onHide,
   onSave,
-  initialEasyPronunciations,
-  initialDifficultPronunciations
 }) => {
-  // モックの初期難しい音を設定
-  const initialMockDifficult = [
-    'か', 'く', 'け', 'こ',
-    'さ', 'し', 'そ',
-    'て', 'と',
-    'は', 'ひ', 'ほ'
-  ];
 
-  const [easyPronunciations, setEasyPronunciations] = useState<string[]>(initialEasyPronunciations);
-  const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>(
-    // 初期値として実際の値とモックの値をマージ
-    [...new Set([...initialDifficultPronunciations, ...initialMockDifficult])]
-  );
+  // ローカルストレージから設定を読み込む
+  const loadStoredSettings = () => {
+    const storedDifficult = localStorage.getItem(STORAGE_KEYS.DIFFICULT);
+    const storedEasy = localStorage.getItem(STORAGE_KEYS.EASY);
+
+    return {
+      difficult: storedDifficult ? JSON.parse(storedDifficult) : [],
+      easy: storedEasy ? JSON.parse(storedEasy) : []
+    };
+  };
+
+  // 設定を保存する関数
+  const saveToLocalStorage = (easy: string[], difficult: string[]) => {
+    localStorage.setItem(STORAGE_KEYS.EASY, JSON.stringify(easy));
+    localStorage.setItem(STORAGE_KEYS.DIFFICULT, JSON.stringify(difficult));
+  };
+
+  const storedSettings = loadStoredSettings();
+  const [easyPronunciations, setEasyPronunciations] = useState<string[]>(storedSettings.easy);
+  const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>(storedSettings.difficult);
   const [activeTab, setActiveTab] = useState<'seion' | 'dakuon' | 'handakuon'>('seion');
 
   // 50音図のデータ（縦書き用に再構成、重複を除去）
@@ -72,6 +81,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({
   };
 
   const handleSave = () => {
+    saveToLocalStorage(easyPronunciations, difficultPronunciations);
     onSave(easyPronunciations, difficultPronunciations);
     onHide();
   };

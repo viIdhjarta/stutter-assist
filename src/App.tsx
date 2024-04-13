@@ -20,9 +20,21 @@ function App() {
   const [easyWords, setEasyWords] = useState<string[]>([]);
   const [difficultWords, setDifficultWords] = useState<string[]>([]);
 
-  // 容易な音，苦手な音の設定
-  const [easyPronunciations, setEasyPronunciations] = useState<string[]>([]);
-  const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>([]);
+  // ローカルストレージから初期値を読み込む
+  const loadStoredSettings = () => {
+    const storedDifficult = localStorage.getItem('difficult_pronunciations');
+    const storedEasy = localStorage.getItem('easy_pronunciations');
+    return {
+      difficult: storedDifficult ? JSON.parse(storedDifficult) : [],
+      easy: storedEasy ? JSON.parse(storedEasy) : []
+    };
+  };
+
+  const initialSettings = loadStoredSettings();
+
+  // 初期値としてローカルストレージの値を使用
+  const [easyPronunciations, setEasyPronunciations] = useState<string[]>(initialSettings.easy);
+  const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>(initialSettings.difficult);
 
   // APIの接続状態を確認する
   useEffect(() => {
@@ -89,8 +101,6 @@ function App() {
           setDifficultPronunciations(difficultPronunciations);
           setShowPreferences(false);
         }}
-        initialEasyPronunciations={easyPronunciations}
-        initialDifficultPronunciations={difficultPronunciations}
       />
 
     </div>
