@@ -109,11 +109,13 @@ def analyze_morphology(text):
             surface = node.surface
             feature = node.feature.split(",")
             pos = feature[0] if len(feature) > 0 else "UNK"
-            reading = feature[6] if len(feature) >= 8 else ""
+            option_pos = feature[1] if len(feature) > 1 else ""
+            reading = feature[9] if len(feature) >= 8 else ""
 
             current_word = {
                 "surface": surface,
                 "pos": pos,
+                "option_pos": option_pos,
                 "position": position,
                 "start": text.find(surface, char_position),
                 "end": text.find(surface, char_position) + len(surface),
@@ -243,18 +245,22 @@ def get_difficult_words(text, difficulty_threshold=0.5, difficult_sounds=None):
 
     # ハイライトから除外する品詞リスト
     exclude_pos = ["助詞", "助動詞", "接尾辞"]
+    exclude_option_pos = ["非自立可能"]
 
     for word_info in words:
         word = word_info["surface"]
         pos = word_info["pos"]  # 　品詞
+        # option_pos = word_info["option_pos"]
         position = word_info["position"]
         start = word_info.get("start", 0)
         end = word_info.get("end", 0)
         reading = word_info.get("reading", "")  # 読み情報を取得
 
+
         # 助詞、助動詞、接尾辞はスキップ
         if any(excluded in pos for excluded in exclude_pos):
             continue
+        
 
         difficulty = 0.0
         reason = ""
