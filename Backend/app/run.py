@@ -7,7 +7,7 @@ if __name__ == "__main__":
     load_dotenv()
 
     # 環境変数から設定を取得
-    host = os.getenv("HOST", "localhost")
+    host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     env = os.getenv("API_ENV", "development")
 

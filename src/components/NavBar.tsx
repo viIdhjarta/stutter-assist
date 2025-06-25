@@ -10,6 +10,8 @@ interface NavBarProps {
 }
 
 const NavBar: React.FC<NavBarProps> = ({ onPreferencesClick, apiConnected }) => {
+
+  console.log(apiConnected);
   return (
     <Navbar bg="light" expand="lg">
       <Navbar.Brand as={Link} to="/">

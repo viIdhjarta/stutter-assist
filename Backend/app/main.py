@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel
 import nlp_utils
 
@@ -13,7 +13,7 @@ app = FastAPI(
 # CORSミドルウェアの設定
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Viteのデフォルトポート
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],  # Viteのデフォルトポート
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,22 +34,11 @@ class AlternativesRequest(BaseModel):
     method: Optional[str] = "both"  # "mlm", "embeddings", "both"
 
 
-class DifficultWord(BaseModel):
-    word: str
-    position: int
-    difficulty: float
-
-
 class Alternative(BaseModel):
     word: str
     score: float
     original_score: float
     pronunciation_difficulty: int
-
-
-class TextAnalysisResponse(BaseModel):
-    text: str
-    difficult_words: List[DifficultWord]
 
 
 class AlternativesResponse(BaseModel):
@@ -62,40 +51,12 @@ async def root():
     return {"message": "Fluent Assist API", "status": "ok"}
 
 
-@app.get("/alternatives/{word}")
-async def get_alternatives(word: str):
-    # 従来のシンプルな代替案API
-    # モックデータの代わりに基本的なレスポンスを返す
-    return {
-        "word": word,
-        "alternatives": ["代替案1", "代替案2", "代替案3"],
-    }
-
-
-@app.post("/analyze", response_model=TextAnalysisResponse)
-async def analyze_text(request: TextAnalysisRequest):
-    """
-    テキストを分析して発音が難しい単語を検出する
-    """
-    try:
-        difficult_words = nlp_utils.get_difficult_words(
-            request.text,
-            request.difficulty_threshold,
-            request.user_difficult_words,
-            request.difficult_sounds,
-        )
-
-        return {"text": request.text, "difficult_words": difficult_words}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"テキスト解析中にエラーが発生しました: {str(e)}"
-        )
 
 # ポップオーバークリック時の代替案生成
 @app.post("/smart-alternatives", response_model=AlternativesResponse)
 async def get_smart_alternatives(request: AlternativesRequest):
     """
-    BERTモデルを使用して文脈に基づいた代替案を生成する
+    BERTモデルを使用して文脈に基づいた代替案を生成
     """
     try:
         alternatives = []
@@ -103,7 +64,7 @@ async def get_smart_alternatives(request: AlternativesRequest):
         # MLMによる代替案生成
         if request.method in ["mlm", "both"]:
             mlm_alternatives = nlp_utils.generate_alternatives_with_mlm(
-                request.text, request.target_word, top_k=10
+                request.text, request.target_word, top_k=30
             )
             alternatives.extend(mlm_alternatives)
 

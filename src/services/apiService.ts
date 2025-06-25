@@ -11,21 +11,6 @@ const apiClient = axios.create({
   },
 });
 
-// 難しい単語を取得するAPI
-export const analyzeDifficultWords = async (text: string, difficultyThreshold: number = 0.5, userDifficultWords: string[] = [], difficultPronunciations: string[] = []) => {
-  try {
-    const response = await apiClient.post('/analyze', {
-      text,
-      difficulty_threshold: difficultyThreshold,
-      user_difficult_words: userDifficultWords,
-      difficult_sounds: difficultPronunciations
-    });
-    return response.data;
-  } catch (error) {
-    console.error('難しい単語の取得に失敗しました', error);
-    throw error;
-  }
-};
 
 // リアルタイム分析API（難しい単語と代替案を一度に取得）
 export const analyzeRealtime = async (text: string, easyPronunciations: string[] = [], difficultPronunciations: string[] = []) => {
@@ -43,18 +28,8 @@ export const analyzeRealtime = async (text: string, easyPronunciations: string[]
   }
 };
 
-// 特定の単語の代替案を取得するAPI
-export const getAlternatives = async (word: string) => {
-  try {
-    const response = await apiClient.get(`/alternatives/${word}`);
-    return response.data.alternatives;
-  } catch (error) {
-    console.error(`単語「${word}」の代替案取得に失敗しました`, error);
-    throw error;
-  }
-};
 
-// BERTを使用した高度な代替案を取得するAPI
+// BERTを使用してマスクされた単語の代替案を取得するAPI
 export const getSmartAlternatives = async (text: string, targetWord: string) => {
   try {
     const response = await apiClient.post('/smart-alternatives', {
@@ -92,9 +67,7 @@ export const checkApiStatus = async () => {
 };
 
 export default {
-  analyzeDifficultWords,
   analyzeRealtime,
-  getAlternatives,
   getSmartAlternatives,
   checkApiStatus,
 }; 
