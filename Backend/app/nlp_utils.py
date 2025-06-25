@@ -407,9 +407,14 @@ def generate_alternatives_with_similar_embeddings(
     return alternatives
 
 
-def filter_by_pronunciation_ease(alternatives, difficult_patterns=None):
+def filter_by_pronunciation_ease(alternatives, difficult_patterns=None, easy_pronunciations=None):
     """
     発音のしやすさに基づいて代替案をフィルタリング
+    
+    Parameters:
+    - alternatives: 代替案のリスト
+    - difficult_patterns: 発音しにくいパターンのリスト（従来の固定パターン）
+    - easy_pronunciations: ユーザーが発音しやすい音のリスト
     """
     if difficult_patterns is None:
         # 吃音者が発音しにくい可能性のあるパターン（例示）
@@ -418,29 +423,44 @@ def filter_by_pronunciation_ease(alternatives, difficult_patterns=None):
     filtered_alts = []
     for alt in alternatives:
         word = alt["word"]
-        # 単語の発音しやすさスコアを計算
-        difficulty_score = 0
-        for pattern in difficult_patterns:
-            if pattern in word:
-                difficulty_score += 1
-
-        # 発音の難しさと意味的な類似度を組み合わせたスコア
-        ease_score = 1.0
+        
+        # 形態素解析で単語の読みを取得
+        word_reading = ""
+        try:
+            word_morphology = analyze_morphology(word)
+            if word_morphology:
+                word_reading = word_morphology[0].get("reading", "")
+        except Exception as e:
+            logger.warning(f"単語 '{word}' の読み取得中にエラー: {e}")
+        
+        # 意味的類似度のみを使用（発音のボーナスは削除）
+        base_score = 1.0
         if "similarity" in alt:
-            ease_score = alt["similarity"] * (1.0 - 0.2 * difficulty_score)
+            base_score = alt["similarity"]
         elif "probability" in alt:
-            ease_score = alt["probability"] * (1.0 - 0.2 * difficulty_score)
+            base_score = alt["probability"]
+        
+        # 最終スコア = 基本スコア（純粋な文脈的類似度）
+        ease_score = base_score
+        
+        # スコアが負にならないよう調整
+        ease_score = max(ease_score, 0.0)
 
         filtered_alts.append(
             {
                 "word": word,
                 "score": ease_score,
-                "original_score": alt.get("similarity", alt.get("probability", 0)),
-                "pronunciation_difficulty": difficulty_score,
+                "original_score": base_score,
+                "reading": word_reading,  # フロントエンドで発音判定に使用
             }
         )
 
-    # スコアでソート
+    # スコアでソート（高い順）
     filtered_alts.sort(key=lambda x: x["score"], reverse=True)
+    
+    # ログ出力（デバッグ用）
+    logger.info(f"文脈的類似度による代替案ランキング")
+    for i, alt in enumerate(filtered_alts[:5]):  # 上位5件のみログ出力
+        logger.info(f"  {i+1}. {alt['word']} (スコア: {alt['score']:.3f}, 読み: {alt['reading']})")
 
     return filtered_alts

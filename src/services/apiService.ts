@@ -30,20 +30,20 @@ export const analyzeRealtime = async (text: string, easyPronunciations: string[]
 
 
 // BERTを使用してマスクされた単語の代替案を取得するAPI
-export const getSmartAlternatives = async (text: string, targetWord: string) => {
+export const getSmartAlternatives = async (text: string, targetWord: string, easyPronunciations: string[] = []) => {
   try {
     const response = await apiClient.post('/smart-alternatives', {
       text,
       target_word: targetWord,
-      method: 'mlm'
+      method: 'mlm',
+      easy_pronunciations: easyPronunciations
     });
 
     // 応答形式の変更を処理
     if (response.data.alternatives) {
-      // 代替単語の配列を返す
+      // 代替案オブジェクト全体を返す（読み情報も含む）
       const alternatives = response.data.alternatives
-        .filter((alt: any) => alt.word !== targetWord) // 元の単語と同じものは除外
-        .map((alt: any) => alt.word);
+        .filter((alt: any) => alt.word !== targetWord); // 元の単語と同じものは除外
 
       return { alternatives };
     } else {

@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container, Row, Col } from 'react-bootstrap';
 import './App.css';
 import NavBar from './components/NavBar';
 import Editor from './components/Editor';
@@ -32,7 +30,7 @@ function App() {
 
   const initialSettings = loadStoredSettings();
 
-  // 初期値としてローカルストレージの値を使用
+  // 初期値としてローカルストレージの値を使用（テスト用にデフォルト値も設定）
   const [easyPronunciations, setEasyPronunciations] = useState<string[]>(initialSettings.easy);
   const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>(initialSettings.difficult);
 
@@ -71,26 +69,23 @@ function App() {
   };
 
   return (
-    <div className="App">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <NavBar
         onPreferencesClick={() => setShowPreferences(true)}
         apiConnected={apiConnected}
       />
-      <Container fluid>
-        <Row className="my-4">
-          <Col md={8}>
-            <Editor
-              hardWords={difficultWords}
-              onAddEasyWord={handleAddEasyWord}
-              onAddDifficultWord={handleAddDifficultWord}
-              userEasyWords={easyWords}
-              userDifficultWords={difficultWords}
-              easyPronunciations={easyPronunciations}
-              difficultPronunciations={difficultPronunciations}
-            />
-          </Col>
-        </Row>
-      </Container>
+      
+      <main className="py-8">
+        <Editor
+          hardWords={difficultWords}
+          onAddEasyWord={handleAddEasyWord}
+          onAddDifficultWord={handleAddDifficultWord}
+          userEasyWords={easyWords}
+          userDifficultWords={difficultWords}
+          easyPronunciations={easyPronunciations}
+          difficultPronunciations={difficultPronunciations}
+        />
+      </main>
 
       {/* 設定モーダル */}
       <PreferencesModal
@@ -102,7 +97,6 @@ function App() {
           setShowPreferences(false);
         }}
       />
-
     </div>
   );
 }

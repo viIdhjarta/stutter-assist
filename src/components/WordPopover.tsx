@@ -16,13 +16,14 @@ interface WordPopoverProps {
   onIgnore: () => void;
   onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void;
   onMouseLeave?: (e: MouseEvent<HTMLDivElement>) => void;
+  easyPronunciations?: string[];  // ユーザーが発音しやすい音のリスト
 }
 
 const WordPopover = forwardRef((
-  { word, position, currentText, textPosition, onSelect, onIgnore, onMouseEnter, onMouseLeave }: WordPopoverProps,
+  { word, position, currentText, textPosition, onSelect, onIgnore, onMouseEnter, onMouseLeave, easyPronunciations }: WordPopoverProps,
   ref: Ref<HTMLDivElement>
 ) => {
-  const [alternatives, setAlternatives] = useState<string[]>([]);
+  const [alternatives, setAlternatives] = useState<{word: string, reading?: string}[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -35,10 +36,39 @@ const WordPopover = forwardRef((
     return { beforeContext, afterContext };
   };
 
+  // カタカナをひらがなに変換する簡易関数
+  const katakanaToHiragana = (str: string): string => {
+    return str.replace(/[\u30A1-\u30F6]/g, (match) => {
+      const char = match.charCodeAt(0) - 0x60;
+      return String.fromCharCode(char);
+    });
+  };
+
+  // 発音しやすい音から始まるかどうかを判定する関数
+  const isEasyPronunciation = (word: string, reading?: string | null): boolean => {
+    if (!easyPronunciations || easyPronunciations.length === 0) {
+      return false;
+    }
+    
+    console.log('Checking word:', word, 'reading:', reading, 'against easyPronunciations:', easyPronunciations);
+    
+    // 読み情報がある場合は読みの最初の文字で判定、ない場合は単語の最初の文字で判定
+    const checkChar = reading ? reading.charAt(0) : word.charAt(0);
+    
+    // カタカナをひらがなに変換して比較
+    const hiraganaCheckChar = katakanaToHiragana(checkChar);
+    
+    const result = easyPronunciations.includes(checkChar) || easyPronunciations.includes(hiraganaCheckChar);
+    
+    console.log(`Word: "${word}", Check char: "${checkChar}", Hiragana: "${hiraganaCheckChar}", Is easy: ${result}`);
+    return result;
+  };
+
   useEffect(() => {
     const fetchAlternatives = async () => {
       try {
         setLoading(true);
+        console.log('WordPopover: easyPronunciations received:', easyPronunciations);
         const { beforeContext, afterContext } = getContextWindow(
           currentText,
           textPosition.start,
@@ -47,10 +77,23 @@ const WordPopover = forwardRef((
         );
         const contextText = beforeContext + word + afterContext;
         console.log('contextText', beforeContext, word, afterContext);
-        const result = await getSmartAlternatives(contextText, word);
+        const result = await getSmartAlternatives(contextText, word, easyPronunciations);
+        console.log('API result:', result);
         
         if (result && result.alternatives && Array.isArray(result.alternatives)) {
-          setAlternatives(result.alternatives);
+          console.log('Setting alternatives:', result.alternatives);
+          // 代替案を統一した形式に変換
+          const processedAlternatives = result.alternatives.map(alt => ({
+            word: typeof alt === 'string' ? alt : alt.word,
+            reading: typeof alt === 'object' && alt.reading ? alt.reading : undefined
+          }));
+          setAlternatives(processedAlternatives);
+          
+          // 各代替案の発音しやすさをチェック
+          processedAlternatives.forEach(alt => {
+            const isEasy = isEasyPronunciation(alt.word, alt.reading);
+            console.log(`Alternative "${alt.word}" (reading: ${alt.reading}): isEasy = ${isEasy}`);
+          });
         } else {
           setAlternatives([]);
         }
@@ -63,7 +106,7 @@ const WordPopover = forwardRef((
     };
 
     fetchAlternatives();
-  }, [word, currentText, textPosition]);
+  }, [word, currentText, textPosition, easyPronunciations]);
 
   const handleSelect = (alternative: string, e: React.MouseEvent): void => {
     e.stopPropagation();
@@ -107,18 +150,31 @@ const WordPopover = forwardRef((
       ) : (
         <div className="max-h-48 overflow-y-auto">
           <ul className="divide-y divide-gray-50">
-            {alternatives.map((alt, index) => (
-              <li
-                key={index}
-                onClick={(e) => handleSelect(alt, e)}
-                onMouseEnter={() => setHoveredIndex(index)}
-                onMouseLeave={() => setHoveredIndex(null)}
-                className={`px-3 py-1.5 text-xs cursor-pointer transition-colors duration-150
-                  ${hoveredIndex === index ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50'}`}
-              >
-                {alt}
-              </li>
-            ))}
+            {alternatives.map((alt, index) => {
+              const isEasy = isEasyPronunciation(alt.word, alt.reading);
+              return (
+                <li
+                  key={index}
+                  onClick={(e) => handleSelect(alt.word, e)}
+                  onMouseEnter={() => setHoveredIndex(index)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                  className={`px-3 py-1.5 text-xs cursor-pointer transition-colors duration-150 ${
+                    isEasy 
+                      ? (hoveredIndex === index 
+                         ? 'bg-green-100 text-green-700 border-l-2 border-green-400' 
+                         : 'bg-green-50 text-green-600 border-l-2 border-green-300 hover:bg-green-100')
+                      : (hoveredIndex === index 
+                         ? 'bg-blue-50 text-blue-600' 
+                         : 'text-gray-700 hover:bg-gray-50')
+                  }`}
+                >
+                  {isEasy && (
+                    <span className="inline-block w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                  )}
+                  {alt.word}
+                </li>
+              );
+            })}
             <li
               onClick={handleIgnore}
               onMouseEnter={() => setHoveredIndex(-1)}

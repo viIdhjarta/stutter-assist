@@ -32,13 +32,14 @@ class AlternativesRequest(BaseModel):
     text: str
     target_word: str
     method: Optional[str] = "both"  # "mlm", "embeddings", "both"
+    easy_pronunciations: Optional[List[str]] = None  # ユーザーが発音しやすい音のリスト
 
 
 class Alternative(BaseModel):
     word: str
     score: float
     original_score: float
-    pronunciation_difficulty: int
+    reading: str
 
 
 class AlternativesResponse(BaseModel):
@@ -73,8 +74,10 @@ async def get_smart_alternatives(request: AlternativesRequest):
         if not alternatives:
             return {"word": request.target_word, "alternatives": []}
 
-        # 発音のしやすさでフィルタリング
-        filtered_alternatives = nlp_utils.filter_by_pronunciation_ease(alternatives)
+        # 発音のしやすさでフィルタリング（ユーザーの発音しやすい音を考慮）
+        filtered_alternatives = nlp_utils.filter_by_pronunciation_ease(
+            alternatives, easy_pronunciations=request.easy_pronunciations
+        )
 
         return {"word": request.target_word, "alternatives": filtered_alternatives}
     except Exception as e:

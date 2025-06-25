@@ -14,6 +14,7 @@ interface DifficultWordSpanProps {
   currentText: string; // 現在のエディタのテキスト全体
   onSelectAlternative: (alternative: string) => void;
   contentState: ContentState;
+  easyPronunciations?: string[]; // ユーザーが発音しやすい音のリスト
 }
 
 interface EditorProps {
@@ -103,9 +104,8 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
   return (
     <span
       ref={spanRef}
-      className="highlight"
       onClick={handleClick}
-      style={{ backgroundColor: '#FFEB3B', cursor: 'pointer', padding: '0 1px' }}
+      className="highlight bg-yellow-200 hover:bg-yellow-300 cursor-pointer px-1 rounded-sm transition-colors duration-200 shadow-sm"
     >
       {props.children}
       {showPopover && (
@@ -120,6 +120,7 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
           }}
           onSelect={handleSelectAlternative}
           onIgnore={() => setShowPopover(false)}
+          easyPronunciations={props.easyPronunciations}
         />
       )}
     </span>
@@ -142,12 +143,17 @@ type DecoratorStrategy = (
 ) => void;
 
 // 形態素解析された単語位置に基づいてハイライトするストラテジー
-const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[]): DecoratorStrategy => {
+const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[], ignoredWords: string[]): DecoratorStrategy => {
   return (contentBlock, callback) => {
     const text = contentBlock.getText();
 
     // 現在のブロックに属するdifficultWords内の単語を取得
     difficultWords.forEach(wordInfo => {
+      // 無視された単語はハイライト対象から除外
+      if (ignoredWords.includes(wordInfo.word)) {
+        return;
+      }
+
       // APIから返された開始・終了位置を直接使用
       if (wordInfo.start !== undefined && wordInfo.end !== undefined) {
         // テキスト内の位置が現在のブロック内にある場合のみコールバックを呼び出す
@@ -170,8 +176,10 @@ const Editor: React.FC<EditorProps> = ({
   const [hardWords, setHardWords] = useState<DifficultWordInfo[]>([]);
   const [currentText, setCurrentText] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  
-  
+  // 無視された単語のリスト
+  const [ignoredWords, setIgnoredWords] = useState<string[]>([]);
+
+
   // 単語を置き換える関数
   const replaceWord = useCallback((oldWord: string, newWord: string, blockKey: string, start: number, end: number): void => {
     // 指定された単語の位置を基にSelectionStateを作成
@@ -217,14 +225,17 @@ const Editor: React.FC<EditorProps> = ({
   const createDecorator = useCallback((): CompositeDecorator => {
     return new CompositeDecorator([
       {
-        strategy: createDifficultWordStrategy(hardWords),
+        strategy: createDifficultWordStrategy(hardWords, ignoredWords),
         component: (props: any) => (
           <DifficultWordSpan
             {...props}
             currentText={currentText}
+            easyPronunciations={easyPronunciations}
             onSelectAlternative={(alternative: string) => {
               if (alternative === 'ignore') {
                 onAddEasyWord(props.decoratedText);
+                // 無視リストに追加
+                setIgnoredWords(prev => [...prev, props.decoratedText]);
               } else {
                 // 単語を代替案で置き換える処理
                 replaceWord(props.decoratedText, alternative, props.blockKey, props.start, props.end);
@@ -234,11 +245,11 @@ const Editor: React.FC<EditorProps> = ({
         ),
       },
     ]);
-  }, [hardWords, onAddEasyWord, replaceWord, currentText]);
+  }, [hardWords, ignoredWords, easyPronunciations, onAddEasyWord, replaceWord, currentText]);
 
   const [editorState, setEditorState] = useState<EditorState>(() => {
     // 初期状態
-    const initialText = '吃音症は何百万人もの人々の個人的および職業的生活に影響を与える言語障害です。スティグマや恥ずかしさから身を守るために、吃音のある人々(PWS)はさまざまな戦略を採用して吃音を隠すことがあります。一般的な戦略の一つは単語の置き換えです。';
+    const initialText = "トランプ氏の２３日の説明によると、双方の攻撃停止を取り決めた停戦合意は２４日に発効。合意発効から２４時間が経過した日本時間２５日午後１時に「戦争が正式に終結する」としていた。合意発効の発表後は当初、攻撃の応酬があったが、ＡＰ通信などは「停戦は維持されている」と報じている。米国のスティーブン・ウィトコフ中東担当特使は２４日、米ＦＯＸニュースのインタビューで、「トランプ氏は、（イランと）『包括的な和平合意』を望んでいる」と明らかにした。長期的な和平が実現すれば、イランの繁栄や湾岸諸国の経済成長につながると訴えた。合意発効を受け、イスラエルのベンヤミン・ネタニヤフ首相とイランのマスード・ペゼシュキアン大統領は２４日、国民向けのメッセージをそれぞれ発出した。ネタニヤフ氏は、ＳＮＳに投稿したビデオ演説で、「この勝利は、後世に語り継がれる」と強調。「我々は核爆弾と２万発のミサイルによる脅威を取り除いた」とイランに対する攻撃の成果を説明した。次の狙いとして、イスラム主義組織ハマスを挙げ、パレスチナ自治区ガザに拘束されている人質の解放に再び取り組む考えも示した。一方、ペゼシュキアン氏は国営テレビで、「イランの人々の勇敢で歴史的な忍耐の末、イスラエルによって強要された１２日間の戦争が終結した」と述べた。イスラエルについては「（イランの）核施設を破壊し、社会不安を扇動するという悪質な目的を達成できなかった」と強調した。";
     setCurrentText(initialText);
     return EditorState.createWithContent(
       ContentState.createFromText(initialText),
@@ -329,26 +340,63 @@ const Editor: React.FC<EditorProps> = ({
     setEditorState(newEditorState);
   };
 
-  // hardWordsが変更されたときにデコレーターを更新
+  // hardWordsやignoredWordsが変更されたときにデコレーターを更新
   useEffect(() => {
     setEditorState(currentState =>
       EditorState.set(currentState, { decorator: createDecorator() })
     );
-  }, [hardWords, createDecorator]);
+  }, [hardWords, ignoredWords, createDecorator]);
 
   return (
-    <div className="editor-container" style={{ position: 'relative' }}>
-      <div className="editor-header" style={{ marginBottom: '10px' }}>
-        <h4>エディタ</h4>
-        {isAnalyzing && <span style={{ color: '#888', fontSize: '14px', marginLeft: '10px' }}>分析中...</span>}
+    <div className="relative max-w-6xl mx-auto p-6">
+      {/* ヘッダー */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+            <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Fluent Assist エディタ
+            </span>
+          </h2>
+          {isAnalyzing && (
+            <div className="flex items-center text-sm text-gray-500">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+              分析中...
+            </div>
+          )}
+        </div>
+        <div className="h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
       </div>
 
-      <div className="editor-wrapper " style={{ border: '1px solid #ccc', padding: '10px', minHeight: '150px', minWidth: '150%' }}>
-        <DraftEditor
-          editorState={editorState}
-          onChange={handleEditorChange}
-          placeholder="文章を入力してください..."
-        />
+      {/* エディタ */}
+      <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-3 border-b border-gray-200">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+            <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+            <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+          </div>
+        </div>
+        <div className="p-8 min-h-[400px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-opacity-50 transition-all duration-200">
+          <DraftEditor
+            editorState={editorState}
+            onChange={handleEditorChange}
+            placeholder="文章を入力してください..."
+          />
+        </div>
+      </div>
+
+      {/* フッター情報 */}
+      <div className="mt-4 flex justify-between items-center text-sm text-gray-500">
+        <div className="flex items-center space-x-4">
+          <span className="flex items-center">
+            <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+            ハイライト = 発音困難語
+          </span>
+          <span>クリックで代替語を表示</span>
+        </div>
+        <div className="text-xs">
+          文字数: {currentText.length}
+        </div>
       </div>
     </div>
   );
