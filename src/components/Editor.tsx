@@ -25,6 +25,7 @@ interface EditorProps {
   userDifficultWords?: string[]; // ユーザーが難しいと設定した単語
   easyPronunciations?: string[]; // ユーザーが簡単な音のリスト
   difficultPronunciations?: string[]; // ユーザーが苦手な音のリスト
+  theme?: string; // テーマ設定
 }
 
 // デバウンス時間（ミリ秒）
@@ -138,6 +139,8 @@ interface DifficultWordInfo {
   start: number;
   end: number;
   blockKey?: string;
+  reason?: string;
+  reading?: string;
 }
 
 // 難しい単語を検出するストラテジー
@@ -147,24 +150,54 @@ type DecoratorStrategy = (
   contentState: ContentState
 ) => void;
 
+// 文書全体での絶対位置からブロック内相対位置を計算する関数（改良版）
+const getBlockRelativePosition = (contentState: ContentState, absoluteStart: number, absoluteEnd: number, targetBlockKey: string): { start: number; end: number } | null => {
+  const blocks = contentState.getBlocksAsArray();
+  let currentOffset = 0;
+  
+  for (const block of blocks) {
+    const blockLength = block.getLength();
+    const blockStart = currentOffset;
+    const blockEnd = currentOffset + blockLength;
+    
+    // 単語がこのブロック内にある場合（境界チェックを改善）
+    if (block.getKey() === targetBlockKey) {
+      const relativeStart = Math.max(0, absoluteStart - blockStart);
+      const relativeEnd = Math.min(blockLength, absoluteEnd - blockStart);
+      
+      // 有効な範囲内かチェック
+      if (relativeStart >= 0 && relativeEnd <= blockLength && relativeStart < relativeEnd) {
+        return {
+          start: relativeStart,
+          end: relativeEnd
+        };
+      }
+    }
+    
+    currentOffset = blockEnd + 1; // 改行文字を考慮
+  }
+  
+  return null;
+};
+
 // 形態素解析された単語位置に基づいてハイライトするストラテジー
 const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[], ignoredWords: string[]): DecoratorStrategy => {
-  return (contentBlock, callback) => {
-    const text = contentBlock.getText();
+  return (contentBlock, callback, contentState) => {
+    const blockKey = contentBlock.getKey();
 
-    // 現在のブロックに属するdifficultWords内の単語を取得
+    // 現在のブロックに属する難しい単語を検出
     difficultWords.forEach(wordInfo => {
       // 無視された単語はハイライト対象から除外
       if (ignoredWords.includes(wordInfo.word)) {
         return;
       }
 
-      // APIから返された開始・終了位置を直接使用
+      // APIから返された絶対位置を使用
       if (wordInfo.start !== undefined && wordInfo.end !== undefined) {
-        // テキスト内の位置が現在のブロック内にある場合のみコールバックを呼び出す
-        const blockStart = text.indexOf(wordInfo.word);
-        if (blockStart !== -1) {
-          callback(blockStart, blockStart + wordInfo.word.length);
+        const blockPosition = getBlockRelativePosition(contentState, wordInfo.start, wordInfo.end, blockKey);
+        
+        if (blockPosition) {
+          callback(blockPosition.start, blockPosition.end);
         }
       }
     });
@@ -175,7 +208,8 @@ const Editor: React.FC<EditorProps> = ({
   onAddEasyWord,
   userDifficultWords = [],
   easyPronunciations = [],
-  difficultPronunciations = []
+  difficultPronunciations = [],
+  theme = 'light'
 }) => {
   // 難しい単語のリスト（APIから取得）
   const [hardWords, setHardWords] = useState<DifficultWordInfo[]>([]);
@@ -250,7 +284,8 @@ const Editor: React.FC<EditorProps> = ({
         ),
       },
     ]);
-  }, [hardWords, ignoredWords, easyPronunciations, onAddEasyWord, replaceWord, currentText]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hardWords, ignoredWords, easyPronunciations]);
 
   const [editorState, setEditorState] = useState<EditorState>(() => {
     // 初期状態
@@ -270,11 +305,7 @@ const Editor: React.FC<EditorProps> = ({
       setIsAnalyzing(true);
 
       // Propsから渡された苦手な音のリストを使用
-      console.log('苦手な音リスト:', difficultPronunciations);
       const response = await analyzeRealtime(text, easyPronunciations, difficultPronunciations);
-
-      // APIレスポンスの詳細をデバッグ表示
-      console.log('APIレスポンス全体:', response);
 
 
       // 形態素解析結果の保存
@@ -303,20 +334,13 @@ const Editor: React.FC<EditorProps> = ({
         }));
 
         setHardWords(difficultWords);
-
-        // 「吃音」を含む難しい単語のデバッグ出力
-        const kitsuonWords = response.words.filter((item: any) => item.word.includes('吃音'));
-        if (kitsuonWords.length > 0) {
-          console.log('「吃音」を含む難しい単語:', kitsuonWords);
-          console.log('「吃音」の読み:', kitsuonWords.map((w: any) => w.reading));
-        }
       }
     } catch (error) {
       console.error('テキスト分析エラー:', error);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [userDifficultWords, isAnalyzing, difficultPronunciations]);
+  }, [userDifficultWords, difficultPronunciations, easyPronunciations]);
 
   // デバウンス処理を行ったテキスト分析関数
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -327,7 +351,7 @@ const Editor: React.FC<EditorProps> = ({
     [analyzeText]
   );
 
-  // エディターの内容が変更されたときのハンドラー
+  // エディターの内容が変更されたときのハンドラー（改良版）
   const handleEditorChange = (newEditorState: EditorState): void => {
     const newContentState = newEditorState.getCurrentContent();
     const oldContentState = editorState.getCurrentContent();
@@ -336,34 +360,121 @@ const Editor: React.FC<EditorProps> = ({
     if (newContentState !== oldContentState) {
       // 新しいテキストを取得
       const newText = newContentState.getPlainText();
-      setCurrentText(newText);
-
-      // 一定時間後にテキスト分析を実行
-      debouncedAnalyzeText(newText);
+      
+      // エディター状態を先に更新
+      setEditorState(newEditorState);
+      
+      // テキストが変更された場合のみ状態更新と分析を実行
+      if (newText !== currentText) {
+        setCurrentText(newText);
+        // 一定時間後にテキスト分析を実行
+        debouncedAnalyzeText(newText);
+      }
+    } else {
+      // 内容が変わらない場合（選択変更など）は状態のみ更新
+      setEditorState(newEditorState);
     }
-
-    setEditorState(newEditorState);
   };
+
+  // 初期テキストの分析を実行
+  useEffect(() => {
+    if (currentText) {
+      analyzeText(currentText);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 初回のみ実行
+
+  // 発音設定が変更されたときに再分析（analyzeTextを依存配列から除外して無限ループを防ぐ）
+  useEffect(() => {
+    if (currentText && (difficultPronunciations.length > 0 || easyPronunciations.length > 0)) {
+      console.log('発音設定が変更されたため再分析します');
+      analyzeText(currentText);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [difficultPronunciations, easyPronunciations, currentText]);
 
   // hardWordsやignoredWordsが変更されたときにデコレーターを更新
   useEffect(() => {
-    setEditorState(currentState =>
-      EditorState.set(currentState, { decorator: createDecorator() })
-    );
-  }, [hardWords, ignoredWords, createDecorator]);
+    // isAnalyzing中は更新を避ける（入力競合を防ぐため）
+    if (isAnalyzing) return;
+    
+    const timer = setTimeout(() => {
+      setEditorState(currentState => {
+        const contentState = currentState.getCurrentContent();
+        const plainText = contentState.getPlainText();
+        
+        // 現在のテキストが空の場合や、状態が不整合な場合は安全に処理
+        if (!plainText) {
+          return EditorState.createEmpty(createDecorator());
+        }
+        
+        const selectionState = currentState.getSelection();
+        
+        try {
+          // 新しいデコレーターでEditorStateを完全に再構築
+          const newEditorState = EditorState.createWithContent(
+            contentState,
+            createDecorator()
+          );
+          
+          // 選択状態を復元（安全性チェック付き）
+          if (selectionState && selectionState.getStartKey() && selectionState.getEndKey()) {
+            return EditorState.forceSelection(newEditorState, selectionState);
+          } else {
+            return newEditorState;
+          }
+        } catch (error) {
+          console.error('デコレーター更新エラー:', error);
+          return currentState; // エラー時は現在の状態を維持
+        }
+      });
+    }, 100); // タイミングを短縮して応答性を向上
+    
+    return () => clearTimeout(timer);
+  }, [hardWords, ignoredWords, createDecorator, isAnalyzing]);
+
+  // テーマに応じたスタイリング
+  const isDark = theme === 'dark';
+  const containerClass = isDark 
+    ? "relative max-w-6xl mx-auto p-6"
+    : "relative max-w-6xl mx-auto p-6";
+  
+  const headerTextClass = isDark 
+    ? "text-2xl font-bold text-white flex items-center"
+    : "text-2xl font-bold text-gray-800 flex items-center";
+    
+  const analyzingTextClass = isDark 
+    ? "flex items-center text-sm text-gray-300"
+    : "flex items-center text-sm text-gray-500";
+    
+  const editorContainerClass = isDark 
+    ? "bg-gray-800 rounded-xl shadow-lg border border-gray-600 overflow-hidden"
+    : "bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden";
+    
+  const editorHeaderClass = isDark 
+    ? "bg-gradient-to-r from-gray-700 to-gray-600 px-6 py-3 border-b border-gray-600"
+    : "bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-3 border-b border-gray-200";
+    
+  const editorContentClass = isDark 
+    ? "p-8 min-h-[400px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-opacity-50 transition-all duration-200 text-white bg-gray-800"
+    : "p-8 min-h-[400px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-opacity-50 transition-all duration-200";
+    
+  const footerTextClass = isDark 
+    ? "text-sm text-gray-300"
+    : "text-sm text-gray-500";
 
   return (
-    <div className="relative max-w-6xl mx-auto p-6">
+    <div className={containerClass}>
       {/* ヘッダー */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+          <h2 className={headerTextClass}>
             <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Fluent Assist エディタ
             </span>
           </h2>
           {isAnalyzing && (
-            <div className="flex items-center text-sm text-gray-500">
+            <div className={analyzingTextClass}>
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
               分析中...
             </div>
@@ -373,25 +484,27 @@ const Editor: React.FC<EditorProps> = ({
       </div>
 
       {/* エディタ */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-3 border-b border-gray-200">
+      <div className={editorContainerClass}>
+        <div className={editorHeaderClass}>
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-red-400 rounded-full"></div>
             <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
             <div className="w-3 h-3 bg-green-400 rounded-full"></div>
           </div>
         </div>
-        <div className="p-8 min-h-[400px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-opacity-50 transition-all duration-200">
-          <DraftEditor
-            editorState={editorState}
-            onChange={handleEditorChange}
-            placeholder="文章を入力してください..."
-          />
+        <div className={editorContentClass}>
+          <div className={isDark ? 'text-white' : 'text-gray-900'}>
+            <DraftEditor
+              editorState={editorState}
+              onChange={handleEditorChange}
+              placeholder="文章を入力してください..."
+            />
+          </div>
         </div>
       </div>
 
       {/* フッター情報 */}
-      <div className="mt-4 flex justify-between items-center text-sm text-gray-500">
+      <div className={`mt-4 flex justify-between items-center ${footerTextClass}`}>
         <div className="flex items-center space-x-4">
           <span className="flex items-center">
             <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>

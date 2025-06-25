@@ -1,17 +1,22 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGear, faFlask, faCircle } from '@fortawesome/free-solid-svg-icons';
+import { faGear, faCircle } from '@fortawesome/free-solid-svg-icons';
 import { Link } from 'react-router-dom';
 
 interface NavBarProps {
   onPreferencesClick: () => void;
   apiConnected: boolean;
+  theme?: string;
 }
 
-const NavBar: React.FC<NavBarProps> = ({ onPreferencesClick, apiConnected }) => {
+const NavBar: React.FC<NavBarProps> = ({ onPreferencesClick, apiConnected, theme = 'light' }) => {
+  
+  const navTheme = theme === 'dark' 
+    ? 'bg-gray-800 shadow-md border-b border-gray-700' 
+    : 'bg-white shadow-md border-b border-gray-200';
 
   return (
-    <nav className="bg-white shadow-md border-b border-gray-200">
+    <nav className={navTheme}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* ロゴセクション */}
@@ -31,7 +36,11 @@ const NavBar: React.FC<NavBarProps> = ({ onPreferencesClick, apiConnected }) => 
             <div className="ml-10 flex items-baseline space-x-4">
               <Link
                 to="/api-test"
-                className="flex items-center px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors duration-200 font-medium"
+                className={`flex items-center px-4 py-2 rounded-lg transition-colors duration-200 font-medium ${
+                  theme === 'dark' 
+                    ? 'text-gray-300 hover:bg-gray-700 hover:text-blue-400' 
+                    : 'text-gray-700 hover:bg-gray-100 hover:text-blue-600'
+                }`}
               >
               </Link>
             </div>
@@ -60,7 +69,11 @@ const NavBar: React.FC<NavBarProps> = ({ onPreferencesClick, apiConnected }) => 
             {/* 設定ボタン */}
             <button
               onClick={onPreferencesClick}
-              className="p-2 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-gray-100 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+              className={`p-2 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 ${
+                theme === 'dark' 
+                  ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700' 
+                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+              }`}
               title="設定"
             >
               <FontAwesomeIcon icon={faGear} className="text-lg" />

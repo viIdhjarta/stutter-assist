@@ -22,17 +22,23 @@ function App() {
   const loadStoredSettings = () => {
     const storedDifficult = localStorage.getItem('difficult_pronunciations');
     const storedEasy = localStorage.getItem('easy_pronunciations');
+    const storedFontSize = localStorage.getItem('font_size');
+    const storedTheme = localStorage.getItem('theme');
     return {
       difficult: storedDifficult ? JSON.parse(storedDifficult) : [],
-      easy: storedEasy ? JSON.parse(storedEasy) : []
+      easy: storedEasy ? JSON.parse(storedEasy) : [],
+      fontSize: storedFontSize || 'medium',
+      theme: storedTheme || 'light'
     };
   };
 
   const initialSettings = loadStoredSettings();
 
-  // 初期値としてローカルストレージの値を使用（テスト用にデフォルト値も設定）
+  // 初期値としてローカルストレージの値を使用
   const [easyPronunciations, setEasyPronunciations] = useState<string[]>(initialSettings.easy);
   const [difficultPronunciations, setDifficultPronunciations] = useState<string[]>(initialSettings.difficult);
+  const [fontSize, setFontSize] = useState<string>(initialSettings.fontSize);
+  const [theme, setTheme] = useState<string>(initialSettings.theme);
 
   // APIの接続状態を確認する
   useEffect(() => {
@@ -68,11 +74,25 @@ function App() {
     }
   };
 
+  // 文字サイズのCSS クラスマッピング
+  const fontSizeClasses = {
+    small: 'text-sm',
+    medium: 'text-base',
+    large: 'text-lg',
+    xlarge: 'text-xl'
+  };
+
+  // テーマクラスの適用
+  const themeClasses = theme === 'dark' 
+    ? 'min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white'
+    : 'min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className={`${themeClasses} ${fontSizeClasses[fontSize as keyof typeof fontSizeClasses] || 'text-base'}`}>
       <NavBar
         onPreferencesClick={() => setShowPreferences(true)}
         apiConnected={apiConnected}
+        theme={theme}
       />
       
       <main className="py-8">
@@ -84,6 +104,7 @@ function App() {
           userDifficultWords={difficultWords}
           easyPronunciations={easyPronunciations}
           difficultPronunciations={difficultPronunciations}
+          theme={theme}
         />
       </main>
 
@@ -91,9 +112,11 @@ function App() {
       <PreferencesModal
         show={showPreferences}
         onHide={() => setShowPreferences(false)}
-        onSave={(easyPronunciations, difficultPronunciations) => {
+        onSave={(easyPronunciations, difficultPronunciations, fontSize, theme) => {
           setEasyPronunciations(easyPronunciations);
           setDifficultPronunciations(difficultPronunciations);
+          setFontSize(fontSize);
+          setTheme(theme);
           setShowPreferences(false);
         }}
       />
