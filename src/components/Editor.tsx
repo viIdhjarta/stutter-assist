@@ -55,11 +55,16 @@ const DifficultWordSpan: React.FC<DifficultWordSpanProps> = (props) => {
 
   const handleClick = (): void => {
     if (spanRef.current) {
-      setPopoverPosition({
-        top: window.scrollY + 20,
-        left: window.scrollX - 45
-      });
-      setShowPopover(!showPopover); // クリックするたびに表示・非表示を切り替え
+      const rect = spanRef.current.getBoundingClientRect();
+      
+      const position = {
+        top: rect.bottom + 5, // ビューポートからの相対位置 + 5px余白
+        left: rect.left - 20  // ビューポートからの相対位置 - 20px（少し左にずらす）
+      };
+      
+      console.log('Clicked word:', props.decoratedText, 'Position:', position, 'Rect:', rect);
+      setPopoverPosition(position);
+      setShowPopover(!showPopover);
     }
   };
 

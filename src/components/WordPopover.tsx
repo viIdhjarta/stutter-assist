@@ -122,7 +122,7 @@ const WordPopover = forwardRef((
   return (
     <div
       ref={ref}
-      className="absolute z-50 w-44 bg-white rounded-md shadow-lg border border-gray-100 overflow-hidden"
+      className="fixed z-50 w-44 bg-white rounded-md shadow-lg border border-gray-100 overflow-hidden"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
