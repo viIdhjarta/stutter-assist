@@ -214,9 +214,11 @@ const Editor: React.FC<EditorProps> = ({
   // 難しい単語のリスト（APIから取得）
   const [hardWords, setHardWords] = useState<DifficultWordInfo[]>([]);
   const [currentText, setCurrentText] = useState<string>('');
+  const [isComposing, setIsComposing] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   // 無視された単語のリスト
   const [ignoredWords, setIgnoredWords] = useState<string[]>([]);
+  const editorRef = useRef<DraftEditor>(null);
 
 
   // 単語を置き換える関数
@@ -351,6 +353,21 @@ const Editor: React.FC<EditorProps> = ({
     [analyzeText]
   );
 
+  // IMEイベントハンドラー
+  const handleCompositionStart = (): void => {
+    setIsComposing(true);
+  };
+
+  const handleCompositionEnd = (): void => {
+    setIsComposing(false);
+    // composition終了後にテキスト分析を実行
+    const plainText = editorState.getCurrentContent().getPlainText();
+    if (plainText !== currentText) {
+      setCurrentText(plainText);
+      debouncedAnalyzeText(plainText);
+    }
+  };
+
   // エディターの内容が変更されたときのハンドラー（改良版）
   const handleEditorChange = (newEditorState: EditorState): void => {
     const newContentState = newEditorState.getCurrentContent();
@@ -364,8 +381,8 @@ const Editor: React.FC<EditorProps> = ({
       // エディター状態を先に更新
       setEditorState(newEditorState);
       
-      // テキストが変更された場合のみ状態更新と分析を実行
-      if (newText !== currentText) {
+      // composition中でない場合のみテキスト状態更新と分析を実行
+      if (newText !== currentText && !isComposing) {
         setCurrentText(newText);
         // 一定時間後にテキスト分析を実行
         debouncedAnalyzeText(newText);
@@ -375,6 +392,20 @@ const Editor: React.FC<EditorProps> = ({
       setEditorState(newEditorState);
     }
   };
+
+  // DOMイベントリスナーの設定
+  useEffect(() => {
+    const editorElement = editorRef.current?.editor;
+    if (editorElement) {
+      editorElement.addEventListener('compositionstart', handleCompositionStart);
+      editorElement.addEventListener('compositionend', handleCompositionEnd);
+      
+      return () => {
+        editorElement.removeEventListener('compositionstart', handleCompositionStart);
+        editorElement.removeEventListener('compositionend', handleCompositionEnd);
+      };
+    }
+  }, [handleCompositionStart, handleCompositionEnd]);
 
   // 初期テキストの分析を実行
   useEffect(() => {
@@ -395,8 +426,8 @@ const Editor: React.FC<EditorProps> = ({
 
   // hardWordsやignoredWordsが変更されたときにデコレーターを更新
   useEffect(() => {
-    // isAnalyzing中は更新を避ける（入力競合を防ぐため）
-    if (isAnalyzing) return;
+    // isAnalyzing中やcomposition中は更新を避ける（入力競合を防ぐため）
+    if (isAnalyzing || isComposing) return;
     
     const timer = setTimeout(() => {
       setEditorState(currentState => {
@@ -431,7 +462,7 @@ const Editor: React.FC<EditorProps> = ({
     }, 100); // タイミングを短縮して応答性を向上
     
     return () => clearTimeout(timer);
-  }, [hardWords, ignoredWords, createDecorator, isAnalyzing]);
+  }, [hardWords, ignoredWords, createDecorator, isAnalyzing, isComposing]);
 
   // テーマに応じたスタイリング
   const isDark = theme === 'dark';
@@ -495,6 +526,7 @@ const Editor: React.FC<EditorProps> = ({
         <div className={editorContentClass}>
           <div className={isDark ? 'text-white' : 'text-gray-900'}>
             <DraftEditor
+              ref={editorRef}
               editorState={editorState}
               onChange={handleEditorChange}
               placeholder="文章を入力してください..."
