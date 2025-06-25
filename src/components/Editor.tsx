@@ -181,7 +181,7 @@ const getBlockRelativePosition = (contentState: ContentState, absoluteStart: num
 };
 
 // 形態素解析された単語位置に基づいてハイライトするストラテジー
-const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[], ignoredWords: string[]): DecoratorStrategy => {
+const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[], ignoredWords: string[], excludedPositions: Set<string>): DecoratorStrategy => {
   return (contentBlock, callback, contentState) => {
     const blockKey = contentBlock.getKey();
 
@@ -189,6 +189,12 @@ const createDifficultWordStrategy = (difficultWords: DifficultWordInfo[], ignore
     difficultWords.forEach(wordInfo => {
       // 無視された単語はハイライト対象から除外
       if (ignoredWords.includes(wordInfo.word)) {
+        return;
+      }
+
+      // 代替案選択で除外された位置はハイライト対象から除外
+      const positionKey = `${wordInfo.start}-${wordInfo.end}`;
+      if (excludedPositions.has(positionKey)) {
         return;
       }
 
@@ -218,7 +224,15 @@ const Editor: React.FC<EditorProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   // 無視された単語のリスト
   const [ignoredWords, setIgnoredWords] = useState<string[]>([]);
+  // 代替案選択で除外された位置のリスト（永続的除外）
+  const [excludedPositions, setExcludedPositions] = useState<Set<string>>(new Set());
   const editorRef = useRef<DraftEditor>(null);
+
+  // 位置ベースで除外する関数（代替案選択後の永続的除外）
+  const addExcludedPosition = useCallback((start: number, end: number): void => {
+    const positionKey = `${start}-${end}`;
+    setExcludedPositions(prev => new Set([...prev, positionKey]));
+  }, []);
 
 
   // 単語を置き換える関数
@@ -257,6 +271,10 @@ const Editor: React.FC<EditorProps> = ({
       const stateWithSelection = EditorState.forceSelection(stateWithDecorator, newSelection);
 
       console.log(`${oldWord} を ${newWord} に置き換えました`);
+      
+      // 代替案の位置を永続的に除外リストに追加（再ハイライト防止）
+      addExcludedPosition(start, start + newWord.length);
+      
       setCurrentText(stateWithSelection.getCurrentContent().getPlainText());
       return stateWithSelection;
     });
@@ -266,7 +284,7 @@ const Editor: React.FC<EditorProps> = ({
   const createDecorator = useCallback((): CompositeDecorator => {
     return new CompositeDecorator([
       {
-        strategy: createDifficultWordStrategy(hardWords, ignoredWords),
+        strategy: createDifficultWordStrategy(hardWords, ignoredWords, excludedPositions),
         component: (props: any) => (
           <DifficultWordSpan
             {...props}
@@ -287,7 +305,7 @@ const Editor: React.FC<EditorProps> = ({
       },
     ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hardWords, ignoredWords, easyPronunciations]);
+  }, [hardWords, ignoredWords, excludedPositions, easyPronunciations]);
 
   const [editorState, setEditorState] = useState<EditorState>(() => {
     // 初期状態
@@ -407,6 +425,7 @@ const Editor: React.FC<EditorProps> = ({
     }
   }, [handleCompositionStart, handleCompositionEnd]);
 
+
   // 初期テキストの分析を実行
   useEffect(() => {
     if (currentText) {
@@ -462,7 +481,7 @@ const Editor: React.FC<EditorProps> = ({
     }, 100); // タイミングを短縮して応答性を向上
     
     return () => clearTimeout(timer);
-  }, [hardWords, ignoredWords, createDecorator, isAnalyzing, isComposing]);
+  }, [hardWords, ignoredWords, excludedPositions, createDecorator, isAnalyzing, isComposing]);
 
   // テーマに応じたスタイリング
   const isDark = theme === 'dark';
