@@ -519,9 +519,9 @@ const Editor: React.FC<EditorProps> = ({
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className={headerTextClass}>
-            <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            {/* <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Fluent Assist エディタ
-            </span>
+            </span> */}
           </h2>
           {isAnalyzing && (
             <div className={analyzingTextClass}>
@@ -557,13 +557,13 @@ const Editor: React.FC<EditorProps> = ({
       {/* フッター情報 */}
       <div className={`mt-4 flex justify-between items-center ${footerTextClass}`}>
         <div className="flex items-center space-x-4">
-          <span className="flex items-center">
-            <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+          <span className="flex items-center text-sm">
+            <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
             ハイライト = 発音困難語
           </span>
           <span>クリックで代替語を表示</span>
         </div>
-        <div className="text-xs">
+        <div className="text-sm">
           文字数: {currentText.length}
         </div>
       </div>
