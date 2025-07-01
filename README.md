@@ -1,6 +1,5 @@
 # Fluent Assist - 吃音者向け文書作成支援ツール
-
-https://github.com/user-attachments/assets/d89cc6d2-ad65-4c1f-a92b-4b4502bce93b
+https://github.com/user-attachments/assets/5d9caa57-793e-4577-a5a5-ab37a679dcf7
 ## プロジェクトの概要
 
 吃音を持つ方々が人前で発表する際の原稿作成をサポートするWebアプリケーションです．吃音に特徴的な中核症状として主に以下の3つがあります．
